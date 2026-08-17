@@ -56,11 +56,25 @@ The current Harness CLI intentionally rejects `--host 0.0.0.0` for safety.
 Use the loopback command above with the plugin's `autoTunnel` option for
 phone access over the public internet.
 
+For regular phone use, make the tunnel setting permanent in the Harness web
+profile. Open
+`%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml`, replace its `[]` with:
+
+```yaml
+- id: harness-remote
+  config:
+    autoTunnel: true
+```
+
+After that, the normal `npx @deepseek-ai/dsh web --port 3190` command starts a
+new ephemeral Quick Tunnel automatically. The temporary `--patch` file is
+only useful for isolated testing or for temporarily overriding the profile.
+
 The plugin is private and is intended to be linked locally. Its main settings
 are `maxDevices` (default `1`), `publicBaseUrl` (an explicit HTTPS origin),
-and `autoTunnel` (the optional Cloudflare Quick Tunnel). Keep
-`autoTunnel: false` during local development; enable it when the required
-public-network path is ready.
+and `autoTunnel` (the optional Cloudflare Quick Tunnel). The package default
+keeps `autoTunnel: false`; enable it in the personal profile when phone access
+is wanted for every Harness run.
 
 The package metadata and Harness patch entry are in
 [`package.json`](package.json) and [`cordis.patch.yml`](cordis.patch.yml).
