@@ -28,17 +28,33 @@ Implementation is in progress. The external [implementation plan](../plans/harne
 Run Harness using the supported command:
 
 ```powershell
-npx @deepseek-ai/dsh web --host 0.0.0.0
+npx @deepseek-ai/dsh web --port 3190
 ```
 
-Build this package, then add the local package to the web profile:
+Build this package, then add the local package to the web profile. The
+repository pins pnpm `11.19.0`; install it once with npm if `pnpm` is not
+already available:
 
 ```powershell
+npm install --global pnpm@11.19.0
+pnpm --version
 pnpm install
 pnpm build
 npx @deepseek-ai/dsh plugin --profile web add link:C:\HenryProjects\ML\deepseek\harness-remote
-npx @deepseek-ai/dsh web --host 0.0.0.0
+npx @deepseek-ai/dsh web --port 3190
 ```
+
+If global npm installation is unavailable, run the package-manager commands
+through `npx` instead:
+
+```powershell
+npx --yes pnpm@11.19.0 install
+npx --yes pnpm@11.19.0 build
+```
+
+The current Harness CLI intentionally rejects `--host 0.0.0.0` for safety.
+Use the loopback command above with the plugin's `autoTunnel` option for
+phone access over the public internet.
 
 The plugin is private and is intended to be linked locally. Its main settings
 are `maxDevices` (default `1`), `publicBaseUrl` (an explicit HTTPS origin),
