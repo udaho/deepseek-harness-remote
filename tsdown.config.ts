@@ -40,6 +40,7 @@ export default defineConfig([
     dts: false,
     sourcemap: true,
     deps: { alwaysBundle: () => true },
+    define: { 'process.env.NODE_ENV': JSON.stringify('production') },
     outputOptions: { entryFileNames: 'mobile.js' },
   },
 ])
