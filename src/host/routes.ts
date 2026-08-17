@@ -1,10 +1,18 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { PairingService, PairingSnapshot } from './pairing.ts'
+import type { TunnelState } from './tunnel.ts'
 import { isLoopbackClient, isLoopbackHostname, readCookie, requestHostname, requestIsHttps } from './loopback.ts'
 
 export const REMOTE_PREFIX = '/harness-remote'
 export const PAIR_COOKIE = 'harness_remote_pending'
+
+export interface TunnelControl {
+  readonly snapshot: TunnelState
+  onChange(listener: (state: TunnelState) => void): () => void
+  start(): void
+  stop(): void
+}
 
 function json(res: ServerResponse, status: number, body: unknown, extra: Record<string, string | string[]> = {}): void {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extra })
@@ -45,7 +53,9 @@ function baseUrl(service: PairingService, address?: string): string | undefined 
   return service.lanBaseUrl
 }
 
-export function makePairingRoutes(service: PairingService, port: number): WebRoute[] {
+export function makePairingRoutes(service: PairingService, port: number, tunnel?: TunnelControl): WebRoute[] {
+  const snapshot = (): PairingSnapshot & { tunnel: TunnelState } => ({ ...service.snapshot(), tunnel: tunnel?.snapshot ?? { state: 'stopped' } })
+
   const issue = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     if (req.method !== 'POST') return json(res, 405, { ok: false, code: 'method-not-allowed' })
     if (!isLoopbackClient(req)) return json(res, 403, { ok: false, code: 'loopback-required' })
@@ -89,7 +99,15 @@ export function makePairingRoutes(service: PairingService, port: number): WebRou
     if (req.method !== 'GET') return void json(res, 405, { ok: false, code: 'method-not-allowed' })
     if (!advertised(service, req) && !isLoopbackClient(req)) return void json(res, 403, { ok: false, code: 'forbidden' })
     const deviceId = readCookie(req.headers.cookie, service.config.cookieName)
-    return void json(res, 200, { ok: true, paired: deviceId !== undefined && service.hasDevice(deviceId), ...service.snapshot() })
+    return void json(res, 200, { ok: true, paired: deviceId !== undefined && service.hasDevice(deviceId), ...snapshot() })
+  }
+
+  const startTunnel = (req: IncomingMessage, res: ServerResponse): void => {
+    if (req.method !== 'POST') return void json(res, 405, { ok: false, code: 'method-not-allowed' })
+    if (!isLoopbackClient(req)) return void json(res, 403, { ok: false, code: 'loopback-required' })
+    if (service.publicBaseUrl === undefined && tunnel === undefined) return void json(res, 503, { ok: false, code: 'tunnel-unavailable' })
+    if (service.publicBaseUrl === undefined) tunnel?.start()
+    return void json(res, 200, { ok: true, ...snapshot() })
   }
 
   const heartbeat = (req: IncomingMessage, res: ServerResponse): void => {
@@ -102,6 +120,7 @@ export function makePairingRoutes(service: PairingService, port: number): WebRou
   const stop = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     if (req.method !== 'POST') return json(res, 405, { ok: false, code: 'method-not-allowed' })
     if (!isLoopbackClient(req)) return json(res, 403, { ok: false, code: 'loopback-required' })
+    tunnel?.stop()
     service.stop()
     return json(res, 200, { ok: true })
   }
@@ -122,11 +141,12 @@ export function makePairingRoutes(service: PairingService, port: number): WebRou
     if (!isLoopbackClient(req)) return void json(res, 403, { ok: false, code: 'loopback-required' })
     res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' })
     let closed = false
-    const write = (snapshot: PairingSnapshot): void => { if (!closed) res.write(`data: ${JSON.stringify({ type: 'state', ...snapshot })}\n\n`) }
-    const off = service.onChange(write)
-    write(service.snapshot())
+    const write = (next: PairingSnapshot & { tunnel: TunnelState }): void => { if (!closed) res.write(`data: ${JSON.stringify({ type: 'state', ...next })}\n\n`) }
+    const offPairing = service.onChange(() => write(snapshot()))
+    const offTunnel = tunnel?.onChange(() => write(snapshot()))
+    write(snapshot())
     const timer = setInterval(() => { if (!closed) res.write(': ping\n\n') }, 15000)
-    const close = (): void => { if (closed) return; closed = true; clearInterval(timer); off() }
+    const close = (): void => { if (closed) return; closed = true; clearInterval(timer); offPairing(); offTunnel?.() }
     res.on('close', close)
   }
 
@@ -135,6 +155,7 @@ export function makePairingRoutes(service: PairingService, port: number): WebRou
     { kind: 'exact', path: `${REMOTE_PREFIX}/pair/accept`, handler: accept },
     { kind: 'exact', path: `${REMOTE_PREFIX}/pair/complete`, handler: complete },
     { kind: 'exact', path: `${REMOTE_PREFIX}/pair/status`, handler: status },
+    { kind: 'exact', path: `${REMOTE_PREFIX}/pair/tunnel/start`, handler: startTunnel },
     { kind: 'exact', path: `${REMOTE_PREFIX}/pair/heartbeat`, handler: heartbeat },
     { kind: 'exact', path: `${REMOTE_PREFIX}/pair/stop`, handler: stop },
     { kind: 'exact', path: `${REMOTE_PREFIX}/pair/approve`, handler: (req, res) => approval(req, res, 'approve') },

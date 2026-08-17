@@ -33,6 +33,12 @@ surface. The host adapter is implemented in
 
 - The desktop-only routes under `/harness-remote/pair/*` mint a short-lived,
   one-time token.
+- `GET /harness-remote/pair/status` and the loopback-only
+  `GET /harness-remote/pair/events` report `tunnel.state` as `stopped`,
+  `starting`, `running`, or `failed`.
+- The desktop must explicitly call the loopback-only
+  `POST /harness-remote/pair/tunnel/start` before a Quick Tunnel is created.
+  Opening the Remote panel does not start it or reveal a pairing URL.
 - The phone exchanges that token at `POST /harness-remote/pair/accept` and
   receives only a pending challenge at first.
 - The desktop operator explicitly approves the challenge. Only then does
@@ -40,7 +46,9 @@ surface. The host adapter is implemented in
 - The device cookie is `Secure` for an HTTPS request and `SameSite=Strict`.
 - The pairing state machine and cap are in
   [`src/host/pairing.ts`](../src/host/pairing.ts). The default
-  `maxDevices` value is `1`.
+  `maxDevices` value is `1`. The QR URL's `expiresAt`/`tokenExpiresAt` identify
+  its pairing expiry; the Quick Tunnel remains active until stopped or Harness
+  exits.
 
 ### Mobile RPC
 

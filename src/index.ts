@@ -11,7 +11,7 @@ import { makeMobileApiRoutes } from './host/mobile-api.ts'
 import { makeMobileRoutes } from './host/mobile-routes.ts'
 import { PairingService } from './host/pairing.ts'
 import { makePairingRoutes } from './host/routes.ts'
-import { TunnelManager } from './host/tunnel.ts'
+import { TunnelManager, type TunnelState } from './host/tunnel.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -34,6 +34,7 @@ export interface Config {
   offlineAfterMs?: number
   maxDevices?: number
   publicBaseUrl?: string
+  /** Legacy profile compatibility; tunnel creation is now always user-triggered. */
   autoTunnel?: boolean
 }
 
@@ -74,14 +75,20 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
 
   const tunnel = new TunnelManager()
-  const tunnelOff = tunnel.onChange(state => { service.setPublicBase(state.state === 'running' ? state.url : undefined) })
+  const configuredPublicBase = service.publicBaseUrl
+  const tunnelOff = tunnel.onChange(state => { service.setPublicBase(state.state === 'running' ? state.url : configuredPublicBase) })
+  const tunnelControl = {
+    get snapshot() { return tunnel.snapshot },
+    onChange(listener: (state: TunnelState) => void): () => void { return tunnel.onChange(listener) },
+    start(): void { tunnel.start(`http://127.0.0.1:${String(port)}`) },
+    stop(): void { tunnel.stop() },
+  }
   ctx.effect(() => () => { tunnelOff(); tunnel.stop() }, 'harness-remote: tunnel')
-  if (resolved.enabled && resolved.autoTunnel) tunnel.start(`http://127.0.0.1:${String(port)}`)
 
   const apiProxy = ctx.get('apiProxy') as ApiProxy | undefined
   if (apiProxy === undefined) throw new Error('harness-remote requires apiProxy')
   const routes = [
-    ...makePairingRoutes(service, port),
+    ...makePairingRoutes(service, port, tunnelControl),
     ...makeMobileRoutes(() => {
       try { return readFileSync(new URL('./mobile.js', import.meta.url), 'utf8') } catch { return undefined }
     }),
