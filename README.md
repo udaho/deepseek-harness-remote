@@ -6,6 +6,7 @@
 - [Status](#status)
 - [Install and run](#install-and-run)
 - [Security model](#security-model)
+- [Mobile settings and workspace boundaries](#mobile-settings-and-workspace-boundaries)
 - [Project layout](#project-layout)
 - [Related source](#related-source)
 
@@ -80,6 +81,22 @@ The package metadata and Harness patch entry are in
 - All non-loopback Harness `/api` traffic is denied unless it presents a live paired-device cookie; loopback retains normal local access.
 - The phone reaches only the plugin-owned mobile API allowlist; it cannot call settings, credentials, arbitrary host actions, or a generic RPC dispatcher.
 - Pairing is intentionally in-memory in v1, so a Harness restart revokes devices. Durable restart-surviving pairing is a secure v2 concern.
+
+## Mobile settings and workspace boundaries
+
+[↑ Top](#deepseek-harness-remote)
+
+The phone surface intentionally does not expose the full Harness settings,
+credentials, host actions, or arbitrary filesystem operations. This matches the
+[reference mobile API boundary](../ThirdParty/dsh-web-ui/packages/dsh-remote-web-ui/src/mobile-api.ts).
+Use the normal desktop Harness settings/configuration surface for host settings;
+the focused plugin's remote settings are currently supplied through its
+[plugin configuration schema](src/index.ts) and profile patch. The phone's
+Display options control only transcript rendering.
+
+There is no phone-side `+ workspace` button. Workspace creation requires a host
+filesystem path and remains a desktop Harness operation; the phone can select
+existing registered workspaces and create sessions inside them.
 
 ## Project layout
 

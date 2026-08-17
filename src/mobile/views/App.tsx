@@ -14,6 +14,7 @@ export function App(): JSX.Element {
   const [error, setError] = useState<string | undefined>()
   const [workspaceId, setWorkspaceId] = useState<string | undefined>(query.get('workspace') ?? undefined)
   const [sessionId, setSessionId] = useState<string | undefined>()
+  const [sessionTitle, setSessionTitle] = useState<string | undefined>()
 
   useEffect(() => {
     let disposed = false
@@ -54,13 +55,13 @@ export function App(): JSX.Element {
   }, [stage])
 
   const openWorkspace = (id: string): void => { setWorkspaceId(id); setStage('sessions') }
-  const openSession = (id: string): void => { setSessionId(id); setStage('chat') }
+  const openSession = (id: string, title = 'New session'): void => { setSessionId(id); setSessionTitle(title); setStage('chat') }
   if (stage === 'pairing') return <Shell><div className="card"><div className="eyebrow">SECURE PAIRING</div><h1>Waiting for approval</h1><p className="subtle">Confirm this phone on the Harness desktop.</p>{pairCode && <div style={{ fontSize: 34, letterSpacing: 8, fontWeight: 800, margin: '24px 0' }}>{pairCode}</div>}<div className="notice">This request expires automatically if it is not approved.</div></div></Shell>
   if (stage === 'error') return <Shell><div className="card"><div className="eyebrow">HARNESS REMOTE</div><h1>Connection unavailable</h1><p className="error">{error}</p><p className="subtle">Open a fresh pairing QR from the Harness desktop. Existing revoked or expired links cannot be reused.</p></div></Shell>
   if (stage === 'loading') return <Shell><div className="card"><p className="subtle">Connecting to Harness…</p></div></Shell>
   if (stage === 'workspaces') return <Shell><WorkspaceView onOpen={openWorkspace} /></Shell>
   if (stage === 'sessions' && workspaceId) return <Shell><SessionListView workspaceId={workspaceId} onBack={() => setStage('workspaces')} onOpen={openSession} /></Shell>
-  if (stage === 'chat' && sessionId) return <Shell><ChatView sessionId={sessionId} onBack={() => { setSessionId(undefined); setStage(workspaceId ? 'sessions' : 'workspaces') }} onOpenSession={openSession} /></Shell>
+  if (stage === 'chat' && sessionId) return <Shell><ChatView sessionId={sessionId} sessionTitle={sessionTitle} onBack={() => { setSessionId(undefined); setSessionTitle(undefined); setStage(workspaceId ? 'sessions' : 'workspaces') }} onOpenSession={openSession} /></Shell>
   return <Shell><WorkspaceView onOpen={openWorkspace} /></Shell>
 }
 
