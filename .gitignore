@@ -1,0 +1,17 @@
+# Local dependency tree and package-manager artifacts.
+node_modules/
+.pnpm-store/
+.npmrc.local
+
+# Build and test outputs.
+lib/
+coverage/
+.vitest/
+*.tsbuildinfo
+
+# Local logs and OS/editor files.
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

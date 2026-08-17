@@ -1,0 +1,5 @@
+# The plugin loader inserts the host face into the Harness bundle and loads
+# the browser face through package.json's dsh.client declaration.
+- insert:
+    - id: harness-remote
+      name: '@udaho/deepseek-harness-remote'
