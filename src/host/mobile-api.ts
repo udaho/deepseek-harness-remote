@@ -79,6 +79,8 @@ function safePrompt(payload: Record<string, unknown>): void {
     const item = part as Record<string, unknown>
     if (item.type === 'text') {
       if (typeof item.text !== 'string' || item.text.length > MAX_PROMPT_TEXT) throw new Error('bad-prompt')
+      const text = item.text.trim()
+      if (text.startsWith('/') && !/^\/permission (read-only|workspace-write|danger-full-access)$/.test(text)) throw new Error('command-not-allowed')
     } else if (item.type === 'image') {
       if (typeof item.mediaType !== 'string' || !IMAGE_MEDIA_TYPES.has(item.mediaType) || typeof item.data !== 'string') throw new Error('bad-image')
       imageBytes += Math.floor(item.data.length * 0.75)

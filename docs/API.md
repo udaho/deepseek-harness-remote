@@ -111,6 +111,11 @@ history, and list sizes are bounded in the host adapter. Images are sent as
 base64 payloads and history attachment references are fetched through the
 explicit attachment method.
 
+Slash commands are restricted to the three permission modes exposed by the
+mobile picker: `/permission read-only`, `/permission workspace-write`, and
+`/permission danger-full-access`. The last mode requires an explicit phone
+confirmation before submission.
+
 ## Unsupported operations
 
 [↑ Top](#harness-remote-api-contract)
