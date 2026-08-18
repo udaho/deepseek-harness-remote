@@ -16,6 +16,10 @@
 
 This private plugin adds a focused phone remote to [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): secure pairing, a dark-first mobile chat surface, session controls, image attachments, live updates with polling fallback, and an optional public Cloudflare Quick Tunnel.
 
+Opening a session starts at its newest history tail. Earlier messages load one
+page at a time as you reach the top, while `↑ Top` and `↓ Bottom` provide quick
+navigation through long sessions.
+
 ## Status
 
 [↑ Top](#deepseek-harness-remote)

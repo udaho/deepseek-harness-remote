@@ -42,15 +42,22 @@ export function ChatView({ sessionId, sessionTitle, onBack, onOpenSession }: { s
   const [showToolCalls, setShowToolCalls] = useState(() => readBoolean(SHOW_TOOL_CALLS_KEY, true))
   const [renaming, setRenaming] = useState(false)
   const [title, setTitle] = useState('')
+  const [showJumpBottom, setShowJumpBottom] = useState(false)
   const historyLoading = useRef(true)
   const bufferedEvents = useRef<WireEvent[]>([])
+  const stickToBottom = useRef(true)
+  const initialPositioned = useRef(false)
   const mux = useMemo(() => new MuxClient(), [])
   const fileInput = useRef<HTMLInputElement>(null)
+
+  const scrollToTop = (behavior: ScrollBehavior = 'smooth'): void => { window.scrollTo({ top: 0, behavior }) }
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth'): void => { window.scrollTo({ top: document.documentElement.scrollHeight, behavior }) }
 
   useEffect(() => {
     let alive = true
     historyLoading.current = true
     bufferedEvents.current = []
+    initialPositioned.current = false
     void history(sessionId, undefined, 60).then(page => {
       if (!alive) return
       const snapshot = fold([], page.events.map(entry => entry.event as unknown as WireEvent))
@@ -61,6 +68,8 @@ export function ChatView({ sessionId, sessionTitle, onBack, onOpenSession }: { s
       setPermission(readPermissionProjection(page.projections))
       historyLoading.current = false
       setLoading(false)
+      stickToBottom.current = true
+      window.requestAnimationFrame(() => { initialPositioned.current = true; scrollToBottom('auto') })
     }).catch(value => {
       if (!alive) return
       historyLoading.current = false
@@ -90,18 +99,43 @@ export function ChatView({ sessionId, sessionTitle, onBack, onOpenSession }: { s
     if (loadingOlder || messages.length === 0) return
     const first = messages[0]
     if (!first) return
+    stickToBottom.current = false
+    const previousHeight = document.documentElement.scrollHeight
+    const previousY = window.scrollY
     setLoadingOlder(true)
     try {
       const page = await history(sessionId, first.seq, 60)
       const older = fold([], page.events.map(entry => entry.event as unknown as WireEvent))
       setMessages(previous => [...older, ...previous])
       setHasOlder(page.hasMore)
+      window.requestAnimationFrame(() => {
+        const heightDelta = document.documentElement.scrollHeight - previousHeight
+        window.scrollTo({ top: previousY + heightDelta, behavior: 'auto' })
+      })
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value))
     } finally {
       setLoadingOlder(false)
     }
   }
+
+  useEffect(() => {
+    const onScroll = (): void => {
+      const distanceFromBottom = document.documentElement.scrollHeight - (window.scrollY + window.innerHeight)
+      const nearBottom = distanceFromBottom < 160
+      stickToBottom.current = nearBottom
+      setShowJumpBottom(!nearBottom && document.documentElement.scrollHeight > window.innerHeight + 160)
+      if (initialPositioned.current && window.scrollY < 120 && hasOlder && !loadingOlder) void loadOlder()
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [hasOlder, loadingOlder, loading])
+
+  useEffect(() => {
+    if (loading || !stickToBottom.current) return
+    window.requestAnimationFrame(() => scrollToBottom('auto'))
+  }, [loading, messages])
 
   const send = async (): Promise<void> => {
     const trimmed = text.trim()
@@ -128,7 +162,7 @@ export function ChatView({ sessionId, sessionTitle, onBack, onOpenSession }: { s
   const answerQuestion = async (answers: Array<{ id: string; selected: string[] }>): Promise<void> => { if (!question) return; try { await respond(question.rpcId, { sessionId, answer: { answers } }); setQuestion(undefined) } catch (value) { setError(value instanceof Error ? value.message : String(value)) } }
 
   const visibleMessages = showSystemMessages ? messages : messages.filter(message => message.kind !== 'user' || message.sourceKind === undefined || message.sourceKind === 'user')
-  return <section><div className="toolbar"><button className="icon" onClick={onBack}>← Sessions</button><div style={{ minWidth: 0, flex: 1 }}><div className="eyebrow">SESSION</div><div className="title" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sessionTitle ?? sessionId}</div></div><button className="icon" onClick={() => setDisplaySheet(true)} aria-label="Display options">☷</button><button className="icon" onClick={() => { setTitle(''); setRenaming(true) }}>✎</button><button className="icon" onClick={() => void models(sessionId).then(setModelSheet).catch(value => setError(value instanceof Error ? value.message : String(value)))}>◈</button>{permission && <button className="icon" onClick={() => setPermissionSheet(true)} aria-label="Permission mode">⚿ {permission.options.find(option => option.value === permission.currentValue)?.name ?? permission.currentValue}</button>}<button className="icon" onClick={() => void doFork()}>⧉</button><button className="icon" onClick={() => void doCancel()} aria-label="Stop session">■</button><button className="danger" onClick={() => void doArchive()}>Archive</button></div>{error && <p className="error">{error}</p>}{approval && <div className="notice"><strong>Permission requested: {approval.toolName}</strong><div className="subtle">{approval.reason ?? 'Harness is waiting for confirmation.'}</div><div className="toolbar" style={{ marginTop: 10 }}><button className="primary" onClick={() => void respond(approval.rpcId, { sessionId, approvalId: approval.approvalId, outcome: 'allowed-once' }).then(() => setApproval(undefined)).catch(value => setError(value instanceof Error ? value.message : String(value)))}>Allow once</button><button className="danger" onClick={() => void respond(approval.rpcId, { sessionId, approvalId: approval.approvalId, outcome: 'rejected' }).then(() => setApproval(undefined)).catch(value => setError(value instanceof Error ? value.message : String(value)))}>Reject</button></div></div>}{question && <QuestionPanel question={question} onSubmit={answerQuestion} />}{!loading && hasOlder && <button className="rowbutton" style={{ margin: '8px 0' }} onClick={() => void loadOlder()} disabled={loadingOlder}>{loadingOlder ? 'Loading older messages…' : 'Load older messages'}</button>}{loading ? <div className="card subtle">Loading conversation…</div> : <div className="messages">{visibleMessages.map(message => <MessageView key={message.id} message={message} sessionId={sessionId} showToolCalls={showToolCalls} />)}{visibleMessages.length === 0 && <div className="card subtle">No visible messages yet. Open Display options to show injected system messages.</div>}</div>}<div className="composer"><div className="composebox"><button className="icon" onClick={() => fileInput.current?.click()} aria-label="Attach images">＋</button><textarea value={text} onChange={event => setText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder="Message Harness…"/><button className="primary" onClick={() => void send()}>Send</button></div>{images.length > 0 && <div className="attachment">{images.length} image{images.length === 1 ? '' : 's'} attached · <button className="icon" onClick={() => setImages([])}>clear</button></div>}<input ref={fileInput} hidden type="file" accept="image/*" multiple onChange={event => void chooseFiles(event.target.files)} /></div>{permissionSheet && permission && <PermissionSheet value={permission} onClose={() => setPermissionSheet(false)} onSelect={value => void applyPermission(value)} />}{modelSheet && <ModelSheet value={modelSheet} sessionId={sessionId} onClose={() => setModelSheet(undefined)} onSelect={(provider, model, effort) => void selectModel(sessionId, provider, model, effort).then(() => setModelSheet(undefined)).catch(value => setError(value instanceof Error ? value.message : String(value)))} />}{displaySheet && <DisplaySheet showToolCalls={showToolCalls} showSystemMessages={showSystemMessages} onToolCalls={() => setShowToolCalls(value => { const next = !value; writeBoolean(SHOW_TOOL_CALLS_KEY, next); return next })} onSystemMessages={() => setShowSystemMessages(value => { const next = !value; writeBoolean(SHOW_SYSTEM_MESSAGES_KEY, next); return next })} onClose={() => setDisplaySheet(false)} />}{renaming && <div className="sheet"><div><h2>Rename session</h2><input className="field" value={title} onChange={event => setTitle(event.target.value)} autoFocus/><div className="toolbar" style={{ marginTop: 12 }}><button className="primary" onClick={() => void doRename()}>Save</button><button className="icon" onClick={() => setRenaming(false)}>Cancel</button></div></div></div>}</section>
+  return <section><div className="toolbar"><button className="icon" onClick={onBack}>← Sessions</button><div style={{ minWidth: 0, flex: 1 }}><div className="eyebrow">SESSION</div><div className="title" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sessionTitle ?? sessionId}</div></div><button className="icon" onClick={() => setDisplaySheet(true)} aria-label="Display options">☷</button><button className="icon" onClick={() => { setTitle(''); setRenaming(true) }}>✎</button><button className="icon" onClick={() => void models(sessionId).then(setModelSheet).catch(value => setError(value instanceof Error ? value.message : String(value)))}>◈</button>{permission && <button className="icon" onClick={() => setPermissionSheet(true)} aria-label="Permission mode">⚿ {permission.options.find(option => option.value === permission.currentValue)?.name ?? permission.currentValue}</button>}<button className="icon" onClick={() => void doFork()}>⧉</button><button className="icon" onClick={() => void doCancel()} aria-label="Stop session">■</button><button className="danger" onClick={() => void doArchive()}>Archive</button></div>{error && <p className="error">{error}</p>}{approval && <div className="notice"><strong>Permission requested: {approval.toolName}</strong><div className="subtle">{approval.reason ?? 'Harness is waiting for confirmation.'}</div><div className="toolbar" style={{ marginTop: 10 }}><button className="primary" onClick={() => void respond(approval.rpcId, { sessionId, approvalId: approval.approvalId, outcome: 'allowed-once' }).then(() => setApproval(undefined)).catch(value => setError(value instanceof Error ? value.message : String(value)))}>Allow once</button><button className="danger" onClick={() => void respond(approval.rpcId, { sessionId, approvalId: approval.approvalId, outcome: 'rejected' }).then(() => setApproval(undefined)).catch(value => setError(value instanceof Error ? value.message : String(value)))}>Reject</button></div></div>}{question && <QuestionPanel question={question} onSubmit={answerQuestion} />}{!loading && hasOlder && <button className="rowbutton" style={{ margin: '8px 0' }} onClick={() => void loadOlder()} disabled={loadingOlder}>{loadingOlder ? 'Loading older messages…' : 'Load older messages'}</button>}{loading ? <div className="card subtle">Loading conversation…</div> : <div className="messages">{visibleMessages.map(message => <MessageView key={message.id} message={message} sessionId={sessionId} showToolCalls={showToolCalls} />)}{visibleMessages.length === 0 && <div className="card subtle">No visible messages yet. Open Display options to show injected system messages.</div>}</div>}{!loading && messages.length > 0 && <div className="jump-controls" aria-label="Session navigation"><button className="icon" onClick={() => scrollToTop()} aria-label="Jump to top">↑ Top</button><button className={showJumpBottom ? 'primary' : 'icon'} onClick={() => { stickToBottom.current = true; scrollToBottom() }} aria-label="Jump to bottom">↓ Bottom</button></div>}<div className="composer"><div className="composebox"><button className="icon" onClick={() => fileInput.current?.click()} aria-label="Attach images">＋</button><textarea value={text} onChange={event => setText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder="Message Harness…"/><button className="primary" onClick={() => void send()}>Send</button></div>{images.length > 0 && <div className="attachment">{images.length} image{images.length === 1 ? '' : 's'} attached · <button className="icon" onClick={() => setImages([])}>clear</button></div>}<input ref={fileInput} hidden type="file" accept="image/*" multiple onChange={event => void chooseFiles(event.target.files)} /></div>{permissionSheet && permission && <PermissionSheet value={permission} onClose={() => setPermissionSheet(false)} onSelect={value => void applyPermission(value)} />}{modelSheet && <ModelSheet value={modelSheet} sessionId={sessionId} onClose={() => setModelSheet(undefined)} onSelect={(provider, model, effort) => void selectModel(sessionId, provider, model, effort).then(() => setModelSheet(undefined)).catch(value => setError(value instanceof Error ? value.message : String(value)))} />}{displaySheet && <DisplaySheet showToolCalls={showToolCalls} showSystemMessages={showSystemMessages} onToolCalls={() => setShowToolCalls(value => { const next = !value; writeBoolean(SHOW_TOOL_CALLS_KEY, next); return next })} onSystemMessages={() => setShowSystemMessages(value => { const next = !value; writeBoolean(SHOW_SYSTEM_MESSAGES_KEY, next); return next })} onClose={() => setDisplaySheet(false)} />}{renaming && <div className="sheet"><div><h2>Rename session</h2><input className="field" value={title} onChange={event => setTitle(event.target.value)} autoFocus/><div className="toolbar" style={{ marginTop: 12 }}><button className="primary" onClick={() => void doRename()}>Save</button><button className="icon" onClick={() => setRenaming(false)}>Cancel</button></div></div></div>}</section>
 }
 
 function MessageView({ message, sessionId, showToolCalls }: { message: RenderMessage; sessionId: string; showToolCalls: boolean }): JSX.Element { return <div className={`bubble ${message.kind}`}><div className="eyebrow">{message.kind === 'user' ? message.sourceKind && message.sourceKind !== 'user' ? message.sourceKind.toUpperCase() : 'YOU' : 'HARNESS'}{message.pending ? ' · STREAMING' : ''}{message.failed ? ' · FAILED' : ''}</div>{message.reasoning && <details className="reasoning"><summary>Reasoning</summary>{message.reasoning}</details>}{message.kind === 'assistant' ? <SafeMarkdown value={message.text || (message.pending ? '…' : '')} /> : <div>{message.text || (message.pending ? '…' : '')}</div>}{message.images?.map(id => <AttachmentImage key={id} sessionId={sessionId} attachmentId={id} />)}{showToolCalls && message.tools.map(tool => <details className="tool" key={tool.id}><summary>{tool.name}</summary><pre>{tool.arguments}</pre></details>)}</div> }
