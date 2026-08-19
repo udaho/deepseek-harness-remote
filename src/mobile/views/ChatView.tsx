@@ -168,6 +168,7 @@ export function ChatView({ sessionId, sessionTitle, onBack, onOpenSession }: { s
       window.removeEventListener('scroll', onScroll)
       if (jumpControlsTimer.current !== undefined) { window.clearTimeout(jumpControlsTimer.current); jumpControlsTimer.current = undefined }
       if (scrollSuppressionTimer.current !== undefined) { window.clearTimeout(scrollSuppressionTimer.current); scrollSuppressionTimer.current = undefined }
+      scrollActivitySuppressed.current = false
     }
   }, [hasOlder, loadingOlder, loading])
 
