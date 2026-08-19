@@ -53,11 +53,18 @@ export function ChatView({ sessionId, sessionTitle, onBack, onOpenSession }: { s
   const initialTailPending = useRef(false)
   const prependAnchor = useRef<{ height: number; y: number }>()
   const jumpControlsTimer = useRef<number>()
+  const scrollSuppressionTimer = useRef<number>()
+  const scrollActivitySuppressed = useRef(false)
   const mux = useMemo(() => new MuxClient(), [])
   const fileInput = useRef<HTMLInputElement>(null)
 
   const scrollToTop = (behavior: ScrollBehavior = 'smooth'): void => { window.scrollTo({ top: 0, behavior }) }
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth'): void => {
+    setShowJumpControls(false)
+    if (jumpControlsTimer.current !== undefined) { window.clearTimeout(jumpControlsTimer.current); jumpControlsTimer.current = undefined }
+    scrollActivitySuppressed.current = true
+    if (scrollSuppressionTimer.current !== undefined) window.clearTimeout(scrollSuppressionTimer.current)
+    scrollSuppressionTimer.current = window.setTimeout(() => { scrollActivitySuppressed.current = false; scrollSuppressionTimer.current = undefined }, 150)
     const documentHeight = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0)
     window.scrollTo({ top: Math.max(0, documentHeight - window.innerHeight), behavior })
   }
@@ -147,7 +154,7 @@ export function ChatView({ sessionId, sessionTitle, onBack, onOpenSession }: { s
       stickToBottom.current = nearBottom
       setShowJumpTop(scrollable && !nearTop)
       setShowJumpBottom(scrollable && !nearBottom)
-      if (!firstScroll) {
+      if (!firstScroll && !scrollActivitySuppressed.current) {
         setShowJumpControls(true)
         if (jumpControlsTimer.current !== undefined) window.clearTimeout(jumpControlsTimer.current)
         jumpControlsTimer.current = window.setTimeout(() => { setShowJumpControls(false); jumpControlsTimer.current = undefined }, 2000)
@@ -160,6 +167,7 @@ export function ChatView({ sessionId, sessionTitle, onBack, onOpenSession }: { s
     return () => {
       window.removeEventListener('scroll', onScroll)
       if (jumpControlsTimer.current !== undefined) { window.clearTimeout(jumpControlsTimer.current); jumpControlsTimer.current = undefined }
+      if (scrollSuppressionTimer.current !== undefined) { window.clearTimeout(scrollSuppressionTimer.current); scrollSuppressionTimer.current = undefined }
     }
   }, [hasOlder, loadingOlder, loading])
 
